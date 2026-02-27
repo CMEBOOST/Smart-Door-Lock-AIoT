@@ -3,15 +3,16 @@ import json
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
-# นำเข้าโมดูลจัดการฐานข้อมูลและเส้นทาง API ที่เราออกแบบไว้
-# ตรวจสอบให้แน่ใจว่าในโฟลเดอร์ api และ database มีไฟล์ __init__.py อยู่ด้วย
+# นำเข้าโมดูลจัดการฐานข้อมูลและเส้นทาง API
 try:
     from database.db_manager import DatabaseManager
     from api.routes import router as api_router
 except ImportError as e:
     print(f"❌ Error: ไม่สามารถนำเข้าโมดูลได้: {e}")
-    print("💡 วิธีแก้: ตรวจสอบว่ามีไฟล์ __init__.py ในโฟลเดอร์ api/ และ database/ หรือยัง")
+    print("💡 ตรวจสอบว่ามีไฟล์ __init__.py ในโฟลเดอร์ api/ และ database/ หรือยัง")
 
 def load_config():
     """โหลดค่าการตั้งค่าจากไฟล์ config.json พร้อมรองรับภาษาไทย"""
@@ -23,26 +24,24 @@ def load_config():
             "arduino": {"ip": "192.168.2.15", "api_secret": "boost_secure_key_2024"},
             "paths": {"database": "database/smart_lock.db"}
         }
-        # บันทึกไฟล์เป็น UTF-8 เพื่อป้องกัน Error บน Windows
         with open(config_path, "w", encoding='utf-8') as f:
             json.dump(default_config, f, indent=4, ensure_ascii=False)
         return default_config
     
-    # อ่านไฟล์ด้วย UTF-8
     with open(config_path, "r", encoding='utf-8') as f:
         return json.load(f)
 
-# 1. โหลด Configuration
+# 1. โหลดการตั้งค่า
 config = load_config()
 
 # 2. เริ่มต้น FastAPI App
 app = FastAPI(
-    title="Smart Door Lock Controller",
-    description="ระบบควบคุมเปิด-ปิดผ่าน WiFi (Manual Mode)",
+    title="Smart Door Lock AIoT",
+    description="ระบบควบคุมประตูอัจฉริยะผ่าน WiFi และหน้าเว็บ Dashboard",
     version="1.0.0"
 )
 
-# 3. ตั้งค่า CORS (Cross-Origin Resource Sharing)
+# 3. ตั้งค่าความปลอดภัย CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -50,48 +49,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 4. ตรวจสอบสถานะฐานข้อมูลเมื่อเริ่มรันระบบ
+# 4. จัดการไฟล์หน้าเว็บ (Static Files)
+# ตรวจสอบว่ามีโฟลเดอร์ public สำหรับเก็บหน้าเว็บ index.html หรือไม่
+if not os.path.exists("public"):
+    os.makedirs("public")
+
+# สั่งให้ FastAPI สามารถเรียกใช้งานไฟล์ในโฟลเดอร์ public ได้ (เช่น CSS, JS, Images)
+app.mount("/static", StaticFiles(directory="public"), name="static")
+
+# 5. กำหนด Route สำหรับหน้าแรก (Dashboard)
+@app.get("/")
+async def read_index():
+    """ส่งหน้า index.html ให้กับบราวเซอร์เมื่อเข้าที่ http://localhost:8000"""
+    index_path = os.path.join("public", "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"status": "error", "message": "ไม่พบไฟล์ index.html ในโฟลเดอร์ public"}
+
+# 6. ตรวจสอบสถานะฐานข้อมูลเมื่อเริ่มรันระบบ
 @app.on_event("startup")
 async def startup_event():
     db_path = config["paths"]["database"]
-    # ตรวจสอบว่าโฟลเดอร์เก็บ DB มีอยู่จริงไหม
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     
     try:
-        # เรียกใช้ DatabaseManager (ตัวที่แก้ไข encoding ใน db_manager.py แล้ว)
         DatabaseManager(db_path)
-        print("\n" + "="*50)
+        print("\n" + "="*60)
         print(f"📦 [Database] เชื่อมต่อสำเร็จ: {db_path}")
-        print(f"📡 [Target] พร้อมส่งคำสั่งไปที่ Arduino IP: {config['arduino']['ip']}")
-        print("="*50 + "\n")
+        print(f"📡 [Target] ส่งคำสั่งไปที่ Arduino IP: {config['arduino']['ip']}")
+        print(f"🌐 [Web UI] เข้าใช้งานได้ที่: http://localhost:8000")
+        print("="*60 + "\n")
     except Exception as e:
         print(f"❌ Database Error: {e}")
 
-# 5. รวมเส้นทางคำสั่งจากไฟล์ api/routes.py
+# 7. รวมเส้นทางคำสั่ง API (/api/unlock, /api/lock, /api/status)
 app.include_router(api_router, prefix="/api", tags=["Control"])
 
-# 6. หน้าแสดงสถานะระบบ (Root Endpoint)
-@app.get("/")
-async def root():
-    return {
-        "status": "online",
-        "mode": "Manual Control",
-        "arduino_ip": config["arduino"]["ip"],
-        "endpoints": {
-            "turn_on_led": "/api/unlock",
-            "turn_off_led": "/api/lock",
-            "check_status": "/api/status"
-        }
-    }
-
-# 7. สั่งรัน Server
+# 8. สั่งให้ Server เริ่มทำงาน
 if __name__ == "__main__":
     port = config["server"]["port"]
     host = config["server"]["host"]
     
-    print(f"🚀 เซิร์ฟเวอร์กำลังเริ่มต้นที่ http://localhost:{port}")
-    
-    # รันด้วย Uvicorn และเปิดโหมด Reload เพื่อความสะดวกในการพัฒนา
+    # รันด้วย Uvicorn พร้อมเปิดโหมด Reload
     uvicorn.run(
         "main:app", 
         host=host, 

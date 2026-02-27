@@ -1,5 +1,6 @@
 #include <WiFiNINA.h>
 #include "config.h"
+#include "pins.h"
 
 // กำหนดพิน (ใช้ขา 2 หรือขา 13 ที่เป็นไฟบนบอร์ดก็ได้ครับ)
 const int ledPin = 2; 
