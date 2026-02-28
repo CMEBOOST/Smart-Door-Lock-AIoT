@@ -3,14 +3,17 @@
 #include "pins.h"
 
 // กำหนดพิน (ใช้ขา 2 หรือขา 13 ที่เป็นไฟบนบอร์ดก็ได้ครับ)
-const int ledPin = 2; 
+const int ledPin = 2;
+const int ledPin3 = 3;
 
 WiFiServer server(80);
 
 void setup() {
   Serial.begin(9600);
   pinMode(ledPin, OUTPUT);
+  pinMode(ledPin3, OUTPUT);
   digitalWrite(ledPin, LOW); // เริ่มต้นให้ไฟดับ
+  digitalWrite(ledPin3, HIGH);
 
   Serial.print("กำลังเชื่อมต่อ WiFi: ");
   Serial.println(ssid);
