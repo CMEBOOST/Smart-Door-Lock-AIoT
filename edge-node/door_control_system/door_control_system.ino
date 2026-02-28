@@ -4,7 +4,7 @@
 
 // กำหนดพิน (ใช้ขา 2 หรือขา 13 ที่เป็นไฟบนบอร์ดก็ได้ครับ)
 const int ledPin = 2;
-const int ledPin3 = 3;
+const int ledPin3 = 3; // จำลองแหล่งจาย Relay
 
 WiFiServer server(80);
 
