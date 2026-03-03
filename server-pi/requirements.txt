@@ -1,9 +1,10 @@
 fastapi
 uvicorn
 opencv-python
-face-recognition
 numpy
 httpx
 pydantic
 python-multipart
-face_recognition_models
+opencv-contrib-python
+Pillow
+picamera2
