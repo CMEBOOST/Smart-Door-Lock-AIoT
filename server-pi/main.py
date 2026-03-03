@@ -1,6 +1,7 @@
 import uvicorn
 import json
 import os
+import threading
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -10,26 +11,28 @@ from fastapi.responses import FileResponse
 try:
     from database.db_manager import DatabaseManager
     from api.routes import router as api_router
+    from core.face_processor import run as run_face_processor
 except ImportError as e:
     print(f"❌ Error: ไม่สามารถนำเข้าโมดูลได้: {e}")
-    print("💡 ตรวจสอบว่ามีไฟล์ __init__.py ในโฟลเดอร์ api/ และ database/ หรือยัง")
+    print("💡 ตรวจสอบว่ามีไฟล์ __init__.py ในโฟลเดอร์ api/, database/, core/ หรือยัง")
+
 
 def load_config():
     """โหลดค่าการตั้งค่าจากไฟล์ config.json พร้อมรองรับภาษาไทย"""
     config_path = "config.json"
     if not os.path.exists(config_path):
-        # สร้างค่าเริ่มต้นหากไม่พบไฟล์
         default_config = {
             "server": {"host": "0.0.0.0", "port": 8000},
             "arduino": {"ip": "192.168.2.15", "api_secret": "boost_secure_key_2024"},
             "paths": {"database": "database/smart_lock.db"}
         }
-        with open(config_path, "w", encoding='utf-8') as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(default_config, f, indent=4, ensure_ascii=False)
         return default_config
-    
-    with open(config_path, "r", encoding='utf-8') as f:
+
+    with open(config_path, "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 # 1. โหลดการตั้งค่า
 config = load_config()
@@ -50,11 +53,9 @@ app.add_middleware(
 )
 
 # 4. จัดการไฟล์หน้าเว็บ (Static Files)
-# ตรวจสอบว่ามีโฟลเดอร์ public สำหรับเก็บหน้าเว็บ index.html หรือไม่
 if not os.path.exists("public"):
     os.makedirs("public")
 
-# สั่งให้ FastAPI สามารถเรียกใช้งานไฟล์ในโฟลเดอร์ public ได้ (เช่น CSS, JS, Images)
 app.mount("/static", StaticFiles(directory="public"), name="static")
 
 # 5. กำหนด Route สำหรับหน้าแรก (Dashboard)
@@ -66,12 +67,12 @@ async def read_index():
         return FileResponse(index_path)
     return {"status": "error", "message": "ไม่พบไฟล์ index.html ในโฟลเดอร์ public"}
 
-# 6. ตรวจสอบสถานะฐานข้อมูลเมื่อเริ่มรันระบบ
+# 6. ตรวจสอบสถานะฐานข้อมูลและเริ่ม Face Processor เมื่อ startup
 @app.on_event("startup")
 async def startup_event():
     db_path = config["paths"]["database"]
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    
+
     try:
         DatabaseManager(db_path)
         print("\n" + "="*60)
@@ -82,6 +83,11 @@ async def startup_event():
     except Exception as e:
         print(f"❌ Database Error: {e}")
 
+    # เริ่ม Face Processor ใน background thread
+    face_thread = threading.Thread(target=run_face_processor, daemon=True)
+    face_thread.start()
+    print("🎥 [Camera] Face Processor เริ่มทำงานแล้ว")
+
 # 7. รวมเส้นทางคำสั่ง API (/api/unlock, /api/lock, /api/status)
 app.include_router(api_router, prefix="/api", tags=["Control"])
 
@@ -89,11 +95,10 @@ app.include_router(api_router, prefix="/api", tags=["Control"])
 if __name__ == "__main__":
     port = config["server"]["port"]
     host = config["server"]["host"]
-    
-    # รันด้วย Uvicorn พร้อมเปิดโหมด Reload
+
     uvicorn.run(
-        "main:app", 
-        host=host, 
-        port=port, 
-        reload=True
+        "main:app",
+        host=host,
+        port=port,
+        reload=False  # ปิด reload เพราะมี thread กล้องทำงานอยู่
     )
