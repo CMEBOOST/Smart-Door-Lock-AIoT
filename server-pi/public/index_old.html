@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Door — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+  :root {
+    --bg:      #080c10;
+    --surface: #0d1117;
+    --border:  #1c2333;
+    --accent:  #00ff88;
+    --danger:  #ff3b5c;
+    --warn:    #ffaa00;
+    --text:    #c9d1d9;
+    --muted:   #484f58;
+    --mono:    'Space Mono', monospace;
+    --sans:    'Sarabun', sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+  body::before {
+    content:'';
+    position:fixed; inset:0;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(0,255,136,.012) 2px, rgba(0,255,136,.012) 4px
+    );
+    pointer-events:none; z-index:0;
+  }
+
+  .wrapper { position:relative; z-index:1; max-width:1280px; margin:0 auto; padding:24px 20px; }
+
+  /* Header */
+  header {
+    display:flex; justify-content:space-between; align-items:center;
+    margin-bottom:28px; padding-bottom:18px;
+    border-bottom:1px solid var(--border);
+  }
+  .logo { font-family:var(--mono); font-size:14px; color:var(--accent); letter-spacing:3px; }
+  .logo span { color:var(--muted); }
+  .header-right { display:flex; align-items:center; gap:14px; }
+  .clock { font-family:var(--mono); font-size:13px; color:var(--muted); }
+  #arduino-badge {
+    display:flex; align-items:center; gap:6px;
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:6px; padding:6px 12px;
+    font-family:var(--mono); font-size:11px; transition:all .3s;
+  }
+  #arduino-badge .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); transition:all .3s; }
+  #arduino-badge.online  { border-color:rgba(0,255,136,.3); color:var(--accent); }
+  #arduino-badge.online .dot  { background:var(--accent); box-shadow:0 0 8px var(--accent); }
+  #arduino-badge.offline { border-color:rgba(255,59,92,.3); color:var(--danger); }
+  #arduino-badge.offline .dot { background:var(--danger); box-shadow:0 0 8px var(--danger); }
+
+  /* Main grid: video | right */
+  .main-grid {
+    display:grid;
+    grid-template-columns: 1fr 360px;
+    gap:20px;
+  }
+  @media(max-width:900px) { .main-grid { grid-template-columns:1fr; } }
+
+  /* Card */
+  .card {
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px; padding:20px;
+    position:relative; overflow:hidden;
+  }
+  .card-title {
+    font-family:var(--mono); font-size:11px;
+    color:var(--muted); letter-spacing:2px;
+    text-transform:uppercase; margin-bottom:16px;
+  }
+
+  /* Video feed */
+  .video-card { padding:0; overflow:hidden; }
+  .video-header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 18px;
+    border-bottom:1px solid var(--border);
+  }
+  .video-header .card-title { margin:0; }
+  .live-pill {
+    display:flex; align-items:center; gap:6px;
+    background:rgba(255,59,92,.1);
+    border:1px solid rgba(255,59,92,.3);
+    border-radius:20px; padding:3px 10px;
+    font-family:var(--mono); font-size:10px;
+    color:var(--danger); letter-spacing:1px;
+  }
+  .live-pill.active { background:rgba(0,255,136,.1); border-color:rgba(0,255,136,.3); color:var(--accent); }
+  .live-pill .dot {
+    width:6px; height:6px; border-radius:50%;
+    background:var(--danger);
+  }
+  .live-pill.active .dot { background:var(--accent); animation:blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  .video-wrap {
+    position:relative;
+    background:#000;
+    aspect-ratio:4/3;
+  }
+  #cam-feed {
+    width:100%; height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  .video-overlay {
+    position:absolute; bottom:0; left:0; right:0;
+    background:linear-gradient(transparent, rgba(0,0,0,.7));
+    padding:12px 16px 14px;
+    display:flex; justify-content:space-between; align-items:flex-end;
+  }
+  .video-time { font-family:var(--mono); font-size:12px; color:rgba(255,255,255,.6); }
+  .corner-tl, .corner-br {
+    position:absolute; width:20px; height:20px;
+  }
+  .corner-tl { top:12px; left:12px; border-top:2px solid var(--accent); border-left:2px solid var(--accent); }
+  .corner-br { bottom:12px; right:12px; border-bottom:2px solid var(--accent); border-right:2px solid var(--accent); }
+
+  /* Right Panel */
+  .right-panel { display:flex; flex-direction:column; gap:16px; }
+
+  /* Lock control */
+  .lock-visual { display:flex; justify-content:center; margin:16px 0 20px; }
+  .lock-ring {
+    width:110px; height:110px; border-radius:50%;
+    border:2px solid var(--border);
+    display:flex; align-items:center; justify-content:center;
+    transition:all .5s cubic-bezier(.4,0,.2,1);
+  }
+  .lock-ring.unlocked {
+    border-color:var(--accent);
+    box-shadow:0 0 40px rgba(0,255,136,.2), inset 0 0 30px rgba(0,255,136,.05);
+  }
+  .lock-ring i { font-size:36px; color:var(--muted); transition:all .5s; }
+  .lock-ring.unlocked i { color:var(--accent); }
+
+  .btn-row { display:flex; gap:8px; }
+  .btn {
+    flex:1; padding:12px; border-radius:8px;
+    border:1px solid var(--border); background:transparent;
+    color:var(--text); font-family:var(--mono); font-size:11px;
+    letter-spacing:1px; cursor:pointer; transition:all .2s;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .btn:active { transform:scale(.97); }
+  .btn:disabled { opacity:.4; cursor:not-allowed; }
+  .btn-unlock { border-color:rgba(0,255,136,.4); color:var(--accent); }
+  .btn-unlock:hover { background:rgba(0,255,136,.08); box-shadow:0 0 20px rgba(0,255,136,.1); }
+  .btn-lock:hover { background:rgba(255,255,255,.04); }
+
+  /* Stats */
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:14px; }
+  .stat { background:rgba(255,255,255,.02); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center; }
+  .stat-val { font-family:var(--mono); font-size:20px; font-weight:700; color:var(--accent); }
+  .stat-label { font-size:10px; color:var(--muted); margin-top:2px; }
+  .stat.danger .stat-val { color:var(--danger); }
+  .stat.warn   .stat-val { color:var(--warn); }
+
+  /* Tabs */
+  .tabs { display:flex; gap:4px; margin-bottom:12px; }
+  .tab {
+    padding:5px 12px; border-radius:6px;
+    border:1px solid transparent; background:transparent;
+    color:var(--muted); font-family:var(--mono); font-size:10px;
+    letter-spacing:1px; cursor:pointer; transition:all .2s;
+  }
+  .tab.active { background:rgba(0,255,136,.08); border-color:rgba(0,255,136,.3); color:var(--accent); }
+
+  /* Log list */
+  .log-list {
+    display:flex; flex-direction:column; gap:5px;
+    max-height:300px; overflow-y:auto; padding-right:3px;
+  }
+  .log-list::-webkit-scrollbar { width:3px; }
+  .log-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+  .log-item {
+    display:grid; grid-template-columns:auto 1fr auto;
+    align-items:center; gap:10px;
+    padding:8px 12px;
+    background:rgba(255,255,255,.02);
+    border:1px solid var(--border);
+    border-radius:7px; font-size:12px;
+    animation:fadeIn .3s ease;
+  }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(3px)} to{opacity:1;transform:none} }
+
+  .log-badge {
+    font-family:var(--mono); font-size:9px; letter-spacing:1px;
+    padding:2px 7px; border-radius:4px; white-space:nowrap;
+  }
+  .badge-WELCOME { background:rgba(0,255,136,.12); color:var(--accent);  border:1px solid rgba(0,255,136,.3); }
+  .badge-UNLOCK  { background:rgba(0,200,255,.12); color:#00c8ff;         border:1px solid rgba(0,200,255,.3); }
+  .badge-LOCK    { background:rgba(255,255,255,.06); color:var(--muted);  border:1px solid var(--border); }
+  .badge-UNKNOWN { background:rgba(255,170,0,.12);  color:var(--warn);    border:1px solid rgba(255,170,0,.3); }
+  .badge-SUSPECT { background:rgba(255,59,92,.12);  color:var(--danger);  border:1px solid rgba(255,59,92,.3); }
+
+  .log-name  { color:var(--text); font-weight:600; }
+  .log-sub   { font-size:11px; color:var(--muted); margin-top:1px; }
+  .log-time  { font-family:var(--mono); font-size:10px; color:var(--muted); white-space:nowrap; }
+
+  .empty-state { text-align:center; padding:30px; color:var(--muted); font-family:var(--mono); font-size:11px; }
+
+  .refresh-btn {
+    float:right; background:transparent;
+    border:1px solid var(--border); color:var(--muted);
+    border-radius:5px; padding:4px 9px;
+    font-family:var(--mono); font-size:10px;
+    cursor:pointer; transition:all .2s;
+  }
+  .refresh-btn:hover { color:var(--accent); border-color:rgba(0,255,136,.3); }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">Smart<span>/</span>Door <span>—</span> AIoT</div>
+    <div class="header-right">
+      <div class="clock" id="clock">--:--:--</div>
+      <div id="arduino-badge">
+        <div class="dot"></div>
+        <span id="arduino-status-text">Checking...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Grid -->
+  <div class="main-grid">
+
+    <!-- Left: Camera Feed -->
+    <div class="card video-card">
+      <div class="video-header">
+        <div class="card-title">// Camera Feed</div>
+        <div class="live-pill" id="live-pill">
+          <div class="dot"></div>
+          <span id="live-text">STANDBY</span>
+        </div>
+      </div>
+      <div class="video-wrap">
+        <img id="cam-feed" src="/api/stream" alt="Camera Feed">
+        <div class="corner-tl"></div>
+        <div class="corner-br"></div>
+        <div class="video-overlay">
+          <div class="video-time" id="video-time">--:--:--</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="right-panel">
+
+      <!-- Door Control -->
+      <div class="card">
+        <div class="card-title">// Door Control</div>
+        <div class="lock-visual">
+          <div class="lock-ring" id="lock-ring">
+            <i class="fas fa-lock" id="lock-icon"></i>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-unlock" id="btn-unlock" onclick="control('unlock')">
+            <i class="fas fa-unlock-alt"></i> UNLOCK
+          </button>
+          <button class="btn btn-lock" id="btn-lock" onclick="control('lock')">
+            <i class="fas fa-lock"></i> LOCK
+          </button>
+        </div>
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-val" id="stat-welcome">—</div>
+            <div class="stat-label">Welcome</div>
+          </div>
+          <div class="stat warn">
+            <div class="stat-val" id="stat-unknown">—</div>
+            <div class="stat-label">Unknown</div>
+          </div>
+          <div class="stat danger">
+            <div class="stat-val" id="stat-suspect">—</div>
+            <div class="stat-label">Suspect</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Logs -->
+      <div class="card" style="flex:1">
+        <div class="card-title">
+          // Activity Log
+          <button class="refresh-btn" onclick="loadAll()">
+            <i class="fas fa-rotate-right"></i>
+          </button>
+        </div>
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab('access')">Access</button>
+          <button class="tab" onclick="switchTab('suspect')">Suspect</button>
+        </div>
+
+        <div id="tab-access">
+          <div class="log-list" id="access-list">
+            <div class="empty-state">Loading...</div>
+          </div>
+        </div>
+        <div id="tab-suspect" style="display:none">
+          <div class="log-list" id="suspect-list">
+            <div class="empty-state">Loading...</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api';
+let isProcessing = false;
+
+// ---- Clock ----
+function updateClock() {
+  const t = new Date().toLocaleTimeString('th-TH', { hour12:false });
+  document.getElementById('clock').textContent     = t;
+  document.getElementById('video-time').textContent = t;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ---- Arduino Status ----
+async function checkStatus() {
+  try {
+    const r    = await fetch(`${API}/status`);
+    const data = await r.json();
+    const badge = document.getElementById('arduino-badge');
+    const text  = document.getElementById('arduino-status-text');
+    badge.className = data.arduino_online ? 'online' : 'offline';
+    text.textContent = data.arduino_online ? 'Arduino Online' : 'Arduino Offline';
+  } catch {
+    document.getElementById('arduino-status-text').textContent = 'Server Error';
+  }
+}
+
+// ---- Stream live indicator ----
+// ตรวจว่า stream โหลดได้หรือยังโดยจับ load event ของ img
+const camFeed = document.getElementById('cam-feed');
+camFeed.onload = () => {
+  const pill = document.getElementById('live-pill');
+  const text = document.getElementById('live-text');
+  pill.classList.add('active');
+  text.textContent = 'LIVE';
+};
+camFeed.onerror = () => {
+  const pill = document.getElementById('live-pill');
+  const text = document.getElementById('live-text');
+  pill.classList.remove('active');
+  text.textContent = 'NO SIGNAL';
+  // retry ทุก 3 วินาที
+  setTimeout(() => { camFeed.src = `/api/stream?t=${Date.now()}`; }, 3000);
+};
+
+// ---- Door Control ----
+async function control(action) {
+  if (isProcessing) return;
+  isProcessing = true;
+  const btn  = document.getElementById(`btn-${action}`);
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+  try {
+    const r    = await fetch(`${API}/${action}`);
+    const data = await r.json();
+    if (data.status === 'success') updateLockUI(action === 'unlock');
+  } catch(e) {
+    console.error(e);
+  } finally {
+    btn.innerHTML = orig;
+    btn.disabled  = false;
+    isProcessing  = false;
+    setTimeout(loadAll, 1000);
+  }
+}
+
+function updateLockUI(unlocked) {
+  const ring = document.getElementById('lock-ring');
+  const icon = document.getElementById('lock-icon');
+  if (unlocked) {
+    ring.classList.add('unlocked');
+    icon.classList.replace('fa-lock', 'fa-unlock-alt');
+  } else {
+    ring.classList.remove('unlocked');
+    icon.classList.replace('fa-unlock-alt', 'fa-lock');
+  }
+}
+
+// ---- Tabs ----
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t, i) =>
+    t.classList.toggle('active', (i === 0) === (tab === 'access'))
+  );
+  document.getElementById('tab-access').style.display  = tab === 'access'  ? '' : 'none';
+  document.getElementById('tab-suspect').style.display = tab === 'suspect' ? '' : 'none';
+}
+
+// ---- Format time ----
+function fmtTime(ts) {
+  if (!ts) return '—';
+  return new Date(ts.replace(' ','T')).toLocaleString('th-TH', {
+    day:'2-digit', month:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false
+  });
+}
+
+// ---- Load Access Logs ----
+async function loadAccessLogs() {
+  try {
+    const data = await (await fetch(`${API}/logs/access?limit=30`)).json();
+    const logs = data.logs || [];
+    document.getElementById('stat-welcome').textContent = logs.filter(l => l.event==='WELCOME').length;
+    document.getElementById('stat-unknown').textContent = logs.filter(l => l.event==='UNKNOWN').length;
+    const list = document.getElementById('access-list');
+    list.innerHTML = logs.length ? logs.map(l => `
+      <div class="log-item">
+        <span class="log-badge badge-${l.event}">${l.event}</span>
+        <div>
+          <div class="log-name">${l.name || '—'}</div>
+          <div class="log-sub">${l.confidence != null ? `conf: ${parseFloat(l.confidence).toFixed(1)}` : ''}</div>
+        </div>
+        <div class="log-time">${fmtTime(l.timestamp)}</div>
+      </div>`).join('') : '<div class="empty-state">ยังไม่มีประวัติ</div>';
+  } catch {
+    document.getElementById('access-list').innerHTML = '<div class="empty-state">โหลดไม่ได้</div>';
+  }
+}
+
+// ---- Load Suspect Logs ----
+async function loadSuspectLogs() {
+  try {
+    const data = await (await fetch(`${API}/logs/suspect?limit=30`)).json();
+    const logs = data.logs || [];
+    document.getElementById('stat-suspect').textContent = logs.length;
+    const list = document.getElementById('suspect-list');
+    list.innerHTML = logs.length ? logs.map(l => `
+      <div class="log-item">
+        <span class="log-badge badge-SUSPECT">
+          ${l.trigger_type === 'FACE_UNKNOWN' ? 'FACE' : 'LOITER'}
+        </span>
+        <div>
+          <div class="log-name">${l.trigger_type === 'FACE_UNKNOWN' ? 'ใบหน้าไม่รู้จัก' : 'ยืนนานผิดปกติ'}</div>
+          <div class="log-sub">
+            ${l.duration_sec != null ? `${parseFloat(l.duration_sec).toFixed(0)}s` : ''}
+            ${l.distance_cm  != null ? ` · ${parseFloat(l.distance_cm).toFixed(0)}cm` : ''}
+            ${l.buzzer_fired ? ' · 🔔' : ''}
+          </div>
+        </div>
+        <div class="log-time">${fmtTime(l.timestamp)}</div>
+      </div>`).join('') : '<div class="empty-state">ไม่มีเหตุการณ์ผิดปกติ ✓</div>';
+  } catch {
+    document.getElementById('suspect-list').innerHTML = '<div class="empty-state">โหลดไม่ได้</div>';
+  }
+}
+
+function loadAll() {
+  loadAccessLogs();
+  loadSuspectLogs();
+  checkStatus();
+}
+
+setInterval(loadAll, 10000);
+loadAll();
+</script>
+</body>
+</html>

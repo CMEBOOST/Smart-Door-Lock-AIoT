@@ -1,76 +1,177 @@
+"""
+database/db_manager.py
+จัดการ SQLite ตาม schema ใหม่
+ตาราง: users, access_logs, suspect_logs, device_status, system_settings
+"""
+
 import sqlite3
-import json
 import os
+from datetime import datetime
+
 
 class DatabaseManager:
-    def __init__(self, db_path):
+    def __init__(self, db_path: str):
         self.db_path = db_path
-        # สร้างโฟลเดอร์ถ้ายังไม่มี
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        self.init_db()
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        self._init_db()
 
-    def get_connection(self):
+    def _get_conn(self):
         conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row  # ให้คืนค่าผลลัพธ์เป็น dict-like
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
-    def init_db(self):
-        """สร้างตารางตาม schema.sql ถ้ายังไม่มีไฟล์ .db"""
-        schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
-        if not os.path.exists(self.db_path):
-            print(f"📦 Creating new database at {self.db_path}...")
-            # แก้ไข: เพิ่ม encoding='utf-8' เพื่อรองรับภาษาไทยใน Comment ของ SQL
-            with open(schema_path, 'r', encoding='utf-8') as f:
-                schema_sql = f.read()
-            
-            conn = self.get_connection()
-            conn.executescript(schema_sql)
-            conn.commit()
-            conn.close()
-            print("✅ Database initialized with 4 tables.")
+    def _init_db(self):
+        schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
+        print(f"📦 เชื่อมต่อ database: {self.db_path}")
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema_sql = f.read()
+        conn = self._get_conn()
+        conn.executescript(schema_sql)
+        conn.commit()
+        conn.close()
+        print("✅ Database พร้อมใช้งาน")
 
-    # --- ฟังก์ชันจัดการผู้ใช้งาน (Users) ---
-    def add_user(self, name, face_encoding, role='owner'):
-        """บันทึกผู้ใช้ใหม่พร้อมค่า Face Encoding (128-d vector)"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        encoding_str = json.dumps(face_encoding.tolist() if hasattr(face_encoding, 'tolist') else face_encoding)
-        cursor.execute(
-            "INSERT INTO users (name, face_encoding, role) VALUES (?, ?, ?)",
-            (name, encoding_str, role)
+    # ----------------------------------------------------------------
+    #  Users
+    # ----------------------------------------------------------------
+    def add_user(self, name: str, role: str = "owner") -> int:
+        """เพิ่มผู้ใช้ใหม่ คืน user_id"""
+        conn = self._get_conn()
+        cur  = conn.execute(
+            "INSERT OR IGNORE INTO users (name, role) VALUES (?, ?)",
+            (name, role)
         )
         conn.commit()
-        user_id = cursor.lastrowid
+        user_id = cur.lastrowid
         conn.close()
         return user_id
 
-    def get_all_users(self):
-        """ดึงข้อมูลผู้ใช้ทั้งหมดเพื่อนำไปเปรียบเทียบใบหน้า"""
-        conn = self.get_connection()
-        users = conn.execute("SELECT * FROM users").fetchall()
+    def get_user_by_name(self, name: str) -> dict | None:
+        conn = self._get_conn()
+        row  = conn.execute(
+            "SELECT * FROM users WHERE name = ?", (name,)
+        ).fetchone()
         conn.close()
-        return users
+        return dict(row) if row else None
 
-    def log_access(self, user_id, status, image_path=None):
-        conn = self.get_connection()
+    def get_all_users(self) -> list:
+        conn  = self._get_conn()
+        rows  = conn.execute("SELECT * FROM users ORDER BY name").fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    # ----------------------------------------------------------------
+    #  Access Logs
+    # ----------------------------------------------------------------
+    def log_access(self, event: str, name: str = "",
+                   confidence: float = None, image_path: str = None,
+                   note: str = None):
+        """
+        บันทึก event การเข้า-ออก
+        event: 'WELCOME' | 'UNLOCK' | 'LOCK' | 'UNKNOWN'
+        """
+        conn    = self._get_conn()
+        user    = self.get_user_by_name(name) if name else None
+        user_id = user["id"] if user else None
         conn.execute(
-            "INSERT INTO access_logs (user_id, status, image_path) VALUES (?, ?, ?)",
-            (user_id, status, image_path)
+            """INSERT INTO access_logs
+               (user_id, event, confidence, image_path, note)
+               VALUES (?, ?, ?, ?, ?)""",
+            (user_id, event, confidence, image_path, note)
         )
         conn.commit()
         conn.close()
 
-    def get_setting(self, key, default=None):
-        conn = self.get_connection()
-        row = conn.execute("SELECT value FROM system_settings WHERE key = ?", (key,)).fetchone()
+    def get_access_logs(self, limit: int = 50) -> list:
+        conn = self._get_conn()
+        rows = conn.execute(
+            """SELECT a.*, u.name, u.role
+               FROM access_logs a
+               LEFT JOIN users u ON a.user_id = u.id
+               ORDER BY a.timestamp DESC LIMIT ?""",
+            (limit,)
+        ).fetchall()
         conn.close()
-        return row['value'] if row else default
+        return [dict(r) for r in rows]
 
-    def update_device_status(self, device_name, is_online):
-        conn = self.get_connection()
+    # ----------------------------------------------------------------
+    #  Suspect Logs
+    # ----------------------------------------------------------------
+    def log_suspect(self, trigger_type: str, duration_sec: float = None,
+                    distance_cm: float = None, image_path: str = None,
+                    buzzer_fired: bool = False):
+        """
+        บันทึกเหตุการณ์ผิดปกติ
+        trigger_type: 'FACE_UNKNOWN' | 'ULTRASONIC_LOITER'
+        """
+        conn = self._get_conn()
         conn.execute(
-            "INSERT OR REPLACE INTO system_status (device_name, is_online, last_seen) VALUES (?, ?, CURRENT_TIMESTAMP)",
-            (device_name, 1 if is_online else 0)
+            """INSERT INTO suspect_logs
+               (trigger_type, duration_sec, distance_cm, image_path, buzzer_fired)
+               VALUES (?, ?, ?, ?, ?)""",
+            (trigger_type, duration_sec, distance_cm,
+             image_path, 1 if buzzer_fired else 0)
+        )
+        conn.commit()
+        conn.close()
+
+    def get_suspect_logs(self, limit: int = 50) -> list:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM suspect_logs ORDER BY timestamp DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    # ----------------------------------------------------------------
+    #  Device Status
+    # ----------------------------------------------------------------
+    def update_device_status(self, device_name: str, is_online: bool,
+                              ip_address: str = ""):
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT INTO device_status (device_name, is_online, ip_address, last_seen)
+               VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(device_name) DO UPDATE SET
+                   is_online   = excluded.is_online,
+                   ip_address  = excluded.ip_address,
+                   last_seen   = CURRENT_TIMESTAMP""",
+            (device_name, 1 if is_online else 0, ip_address)
+        )
+        conn.commit()
+        conn.close()
+
+    def get_device_status(self, device_name: str) -> dict | None:
+        conn = self._get_conn()
+        row  = conn.execute(
+            "SELECT * FROM device_status WHERE device_name = ?",
+            (device_name,)
+        ).fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    # ----------------------------------------------------------------
+    #  System Settings
+    # ----------------------------------------------------------------
+    def get_setting(self, key: str, default=None):
+        conn = self._get_conn()
+        row  = conn.execute(
+            "SELECT value FROM system_settings WHERE key = ?", (key,)
+        ).fetchone()
+        conn.close()
+        return row["value"] if row else default
+
+    def update_setting(self, key: str, value: str):
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT INTO system_settings (key, value, updated_at)
+               VALUES (?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(key) DO UPDATE SET
+                   value      = excluded.value,
+                   updated_at = CURRENT_TIMESTAMP""",
+            (key, value)
         )
         conn.commit()
         conn.close()

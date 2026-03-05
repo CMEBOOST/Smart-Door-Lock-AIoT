@@ -7,44 +7,42 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-# นำเข้าโมดูลจัดการฐานข้อมูลและเส้นทาง API
 try:
     from database.db_manager import DatabaseManager
     from api.routes import router as api_router
     from core.face_processor import run as run_face_processor
+    from core.sensor_manager import start_sensors, stop_sensors
 except ImportError as e:
-    print(f"❌ Error: ไม่สามารถนำเข้าโมดูลได้: {e}")
-    print("💡 ตรวจสอบว่ามีไฟล์ __init__.py ในโฟลเดอร์ api/, database/, core/ หรือยัง")
+    print(f"❌ Error: {e}")
+    print("💡 ตรวจสอบว่ามี __init__.py ในโฟลเดอร์ api/, database/, core/")
 
 
 def load_config():
-    """โหลดค่าการตั้งค่าจากไฟล์ config.json พร้อมรองรับภาษาไทย"""
     config_path = "config.json"
     if not os.path.exists(config_path):
         default_config = {
-            "server": {"host": "0.0.0.0", "port": 8000},
+            "server":  {"host": "0.0.0.0", "port": 8000},
             "arduino": {"ip": "192.168.2.15", "api_secret": "boost_secure_key_2024"},
-            "paths": {"database": "database/smart_lock.db"}
+            "paths":   {"database": "database/smart_lock.db"}
         }
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(default_config, f, indent=4, ensure_ascii=False)
         return default_config
-
     with open(config_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-# 1. โหลดการตั้งค่า
+# โหลด config
 config = load_config()
 
-# 2. เริ่มต้น FastAPI App
+# สร้าง FastAPI App
 app = FastAPI(
     title="Smart Door Lock AIoT",
     description="ระบบควบคุมประตูอัจฉริยะผ่าน WiFi และหน้าเว็บ Dashboard",
     version="1.0.0"
 )
 
-# 3. ตั้งค่าความปลอดภัย CORS
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -52,22 +50,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 4. จัดการไฟล์หน้าเว็บ (Static Files)
+# Static files
 if not os.path.exists("public"):
     os.makedirs("public")
-
 app.mount("/static", StaticFiles(directory="public"), name="static")
 
-# 5. กำหนด Route สำหรับหน้าแรก (Dashboard)
+
 @app.get("/")
 async def read_index():
-    """ส่งหน้า index.html ให้กับบราวเซอร์เมื่อเข้าที่ http://localhost:8000"""
     index_path = os.path.join("public", "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    return {"status": "error", "message": "ไม่พบไฟล์ index.html ในโฟลเดอร์ public"}
+    return {"status": "error", "message": "ไม่พบ index.html"}
 
-# 6. ตรวจสอบสถานะฐานข้อมูลและเริ่ม Face Processor เมื่อ startup
+
 @app.on_event("startup")
 async def startup_event():
     db_path = config["paths"]["database"]
@@ -76,29 +72,39 @@ async def startup_event():
     try:
         DatabaseManager(db_path)
         print("\n" + "="*60)
-        print(f"📦 [Database] เชื่อมต่อสำเร็จ: {db_path}")
-        print(f"📡 [Target] ส่งคำสั่งไปที่ Arduino IP: {config['arduino']['ip']}")
-        print(f"🌐 [Web UI] เข้าใช้งานได้ที่: http://localhost:8000")
+        print(f"📦 [Database]  เชื่อมต่อสำเร็จ: {db_path}")
+        print(f"📡 [Arduino]   IP: {config['arduino']['ip']}")
+        print(f"🌐 [Web UI]    http://localhost:8000")
         print("="*60 + "\n")
     except Exception as e:
         print(f"❌ Database Error: {e}")
 
-    # เริ่ม Face Processor ใน background thread
-    face_thread = threading.Thread(target=run_face_processor, daemon=True)
-    face_thread.start()
-    print("🎥 [Camera] Face Processor เริ่มทำงานแล้ว")
+    # เริ่ม Sensors (PIR, Ultrasonic, LCD, Buzzer)
+    camera_event = start_sensors()
 
-# 7. รวมเส้นทางคำสั่ง API (/api/unlock, /api/lock, /api/status)
+    # เริ่ม Face Processor — รอ PIR ก่อนค่อยประมวลผล
+    threading.Thread(
+        target=run_face_processor,
+        args=(camera_event,),
+        daemon=True
+    ).start()
+    print("🎥 [Camera] Face Processor พร้อมทำงาน (รอ PIR trigger)\n")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    stop_sensors()
+    print("👋 ระบบปิดเรียบร้อย")
+
+
+# API routes
 app.include_router(api_router, prefix="/api", tags=["Control"])
 
-# 8. สั่งให้ Server เริ่มทำงาน
-if __name__ == "__main__":
-    port = config["server"]["port"]
-    host = config["server"]["host"]
 
+if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host=host,
-        port=port,
+        host=config["server"]["host"],
+        port=config["server"]["port"],
         reload=False  # ปิด reload เพราะมี thread กล้องทำงานอยู่
     )
