@@ -1,131 +1,80 @@
 """
 core/train.py
-เทรน LBPH Face Recognizer จาก dataset/ ที่ root ของ project
-บันทึก model → server-pi/storage/trainer.yml
-บันทึก names → server-pi/storage/names.json
+Train LBPH model จาก dataset/
+สามารถเรียกได้ทั้งจาก CLI และจาก routes.py (train ใหม่ผ่านเว็บ)
 """
 
 import cv2
-import numpy as np
-from PIL import Image
 import os
 import json
+import numpy as np
 
-# ============================================================
-#  PATH CONFIG
-#  core/train.py อยู่ใน server-pi/core/
-#    SERVER_PI_DIR  = .../server-pi/
-#    ROOT_DIR       = .../SMART-DOOR-LOCK-AIOT/
-# ============================================================
 SERVER_PI_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ROOT_DIR      = os.path.dirname(SERVER_PI_DIR)
-
-BASE_PATH  = os.path.join(ROOT_DIR,      "dataset")                 # SMART-DOOR-LOCK-AIOT/dataset/
-MODEL_PATH = os.path.join(SERVER_PI_DIR, "storage", "trainer.yml")  # server-pi/storage/trainer.yml
-NAMES_PATH = os.path.join(SERVER_PI_DIR, "storage", "names.json")   # server-pi/storage/names.json
-
-IMAGE_EXTS    = ('.jpg', '.jpeg', '.png', '.bmp')
-MIN_FACE_SIZE = (30, 30)
-
-recognizer = cv2.face.LBPHFaceRecognizer_create()
-detector   = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-)
+DATASET_DIR   = os.path.join(SERVER_PI_DIR, "dataset")
+MODEL_PATH    = os.path.join(SERVER_PI_DIR, "storage", "trainer.yml")
+NAMES_PATH    = os.path.join(SERVER_PI_DIR, "storage", "names.json")
 
 
-def get_faces_from_image(image_path: str, label: int):
-    """โหลดภาพและดึงใบหน้าทั้งหมด พร้อม label"""
-    try:
-        img       = Image.open(image_path).convert('L')
-        img_numpy = np.array(img, 'uint8')
-        faces     = detector.detectMultiScale(
-            img_numpy,
-            scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=MIN_FACE_SIZE
-        )
-        samples, labels = [], []
-        for (x, y, w, h) in faces:
-            samples.append(img_numpy[y:y+h, x:x+w])
-            labels.append(label)
-        return samples, labels
-    except Exception as e:
-        print(f"   ⚠️  ข้ามไฟล์ {os.path.basename(image_path)}: {e}")
-        return [], []
+def train():
+    os.makedirs(os.path.join(SERVER_PI_DIR, "storage"), exist_ok=True)
 
+    face_cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    )
 
-def train_system():
-    print("\n" + "="*55)
-    print("  🧠  Smart Door — Face Recognition Trainer")
-    print("="*55)
+    faces, labels, names = [], [], {}
+    label_id = 0
 
-    # ตรวจสอบ dataset
-    if not os.path.exists(BASE_PATH):
-        print(f"❌ ไม่พบโฟลเดอร์ dataset: {BASE_PATH}")
-        return
+    if not os.path.exists(DATASET_DIR):
+        raise FileNotFoundError(f"ไม่พบ dataset dir: {DATASET_DIR}")
 
-    user_folders = sorted([
-        f for f in os.listdir(BASE_PATH)
-        if os.path.isdir(os.path.join(BASE_PATH, f))
+    folders = sorted([
+        d for d in os.listdir(DATASET_DIR)
+        if os.path.isdir(os.path.join(DATASET_DIR, d))
     ])
 
-    if not user_folders:
-        print("❌ ไม่พบโฟลเดอร์ผู้ใช้ใน dataset/")
-        return
+    if not folders:
+        raise ValueError("ไม่มี user ใน dataset")
 
-    print(f"\n[1/3] พบรายชื่อ: {user_folders}")
-    print(f"      dataset path : {BASE_PATH}")
-    print(f"      model path   : {MODEL_PATH}\n")
+    print(f"[Train] พบ {len(folders)} user: {folders}")
 
-    # สร้างโฟลเดอร์ storage ถ้ายังไม่มี
-    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-
-    face_samples, ids, names_map = [], [], {}
-
-    for index, folder_name in enumerate(user_folders):
-        names_map[index] = folder_name
-        folder_path = os.path.join(BASE_PATH, folder_name)
-        image_paths = [
-            os.path.join(folder_path, f)
-            for f in os.listdir(folder_path)
-            if f.lower().endswith(IMAGE_EXTS)
+    for folder in folders:
+        names[label_id] = folder
+        folder_path     = os.path.join(DATASET_DIR, folder)
+        img_files       = [
+            f for f in os.listdir(folder_path)
+            if f.lower().endswith((".jpg", ".jpeg", ".png"))
         ]
 
-        if not image_paths:
-            print(f"   ⚠️  ไม่มีรูปในโฟลเดอร์ '{folder_name}' — ข้ามไป")
-            continue
+        count = 0
+        for img_file in img_files:
+            img_path = os.path.join(folder_path, img_file)
+            img      = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                continue
+            detected = face_cascade.detectMultiScale(img, 1.1, 5, minSize=(30, 30))
+            for (x, y, w, h) in detected:
+                faces.append(img[y:y+h, x:x+w])
+                labels.append(label_id)
+                count += 1
 
-        print(f"   > {folder_name} ({len(image_paths)} รูป)")
-        face_count = 0
+        print(f"[Train]   {folder}: {count} faces จาก {len(img_files)} รูป")
+        label_id += 1
 
-        for image_path in image_paths:
-            samples, labels = get_faces_from_image(image_path, index)
-            face_samples.extend(samples)
-            ids.extend(labels)
-            face_count += len(samples)
+    if not faces:
+        raise ValueError("ไม่พบใบหน้าในรูปภาพทั้งหมด")
 
-        print(f"     พบใบหน้า: {face_count} ใบหน้า")
-
-    # ตรวจสอบว่ามีข้อมูลพอก่อน train
-    if not face_samples:
-        print("\n❌ ไม่พบใบหน้าเลย! ตรวจสอบ dataset และแสงในรูปภาพ")
-        return
-
-    print(f"\n   รวม: {len(face_samples)} ใบหน้า จาก {len(set(ids))} คน")
-
-    # บันทึก names.json
-    with open(NAMES_PATH, 'w', encoding='utf-8') as f:
-        json.dump(names_map, f, ensure_ascii=False, indent=4)
-    print(f"\n[2/3] บันทึก names.json → {NAMES_PATH}")
-
-    # Train และบันทึก model
-    print("[3/3] AI กำลังเรียนรู้... (อาจใช้เวลาสักครู่)")
-    recognizer.train(face_samples, np.array(ids))
+    recognizer = cv2.face.LBPHFaceRecognizer_create()
+    recognizer.train(faces, np.array(labels))
     recognizer.write(MODEL_PATH)
 
-    print(f"\n✅ เสร็จสมบูรณ์! บันทึก model → {MODEL_PATH}")
-    print("   พร้อมรันระบบด้วย: python main.py\n")
+    with open(NAMES_PATH, "w", encoding="utf-8") as f:
+        json.dump(names, f, ensure_ascii=False, indent=2)
+
+    print(f"[Train] ✅ Train เสร็จ | {len(faces)} faces | {len(names)} users")
+    print(f"[Train] บันทึก model → {MODEL_PATH}")
+    return {"faces": len(faces), "users": len(names), "names": names}
 
 
 if __name__ == "__main__":
-    train_system()
+    train()

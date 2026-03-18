@@ -116,7 +116,14 @@
   .log-time { font-family:var(--mono); font-size:10px; color:var(--muted); white-space:nowrap; }
   .empty-state { text-align:center; padding:30px; color:var(--muted); font-family:var(--mono); font-size:11px; }
 
-  /* Suspect Slideshow */
+  /* Nav */
+  .nav { display:flex; gap:4px; margin-bottom:24px; border-bottom:1px solid var(--border); padding-bottom:12px; }
+  .nav-btn { padding:6px 16px; border-radius:6px; border:1px solid transparent; background:transparent; color:var(--muted); font-family:var(--mono); font-size:11px; letter-spacing:1px; cursor:pointer; transition:all .2s; }
+  .nav-btn.active { background:rgba(0,255,136,.08); border-color:rgba(0,255,136,.3); color:var(--accent); }
+
+  /* Pages */
+  .page { display:none; }
+  .page.active { display:block; }
   .slideshow { margin-top:14px; }
   .slide-main {
     position:relative; aspect-ratio:4/3;
@@ -160,7 +167,37 @@
   }
   .slide-delete:hover { background:rgba(255,59,92,.2); }
 
-  /* Modal fullscreen */
+  /* Manage Users */
+  .users-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  @media(max-width:700px) { .users-grid { grid-template-columns:1fr; } }
+  .user-list { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
+  .user-item { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:rgba(255,255,255,.02); border:1px solid var(--border); border-radius:8px; transition:all .2s; }
+  .user-item:hover { border-color:rgba(0,255,136,.2); }
+  .user-name { font-weight:600; }
+  .user-count { font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .user-del { background:transparent; border:1px solid rgba(255,59,92,.3); color:var(--danger); border-radius:5px; padding:4px 10px; font-size:11px; cursor:pointer; transition:all .2s; }
+  .user-del:hover { background:rgba(255,59,92,.1); }
+
+  /* Capture */
+  .capture-area { display:flex; flex-direction:column; gap:12px; margin-top:14px; }
+  .name-input { background:rgba(255,255,255,.04); border:1px solid var(--border); border-radius:8px; padding:10px 14px; color:var(--text); font-family:var(--sans); font-size:14px; width:100%; outline:none; transition:border-color .2s; }
+  .name-input:focus { border-color:rgba(0,255,136,.4); }
+  .name-input::placeholder { color:var(--muted); }
+  .video-preview { position:relative; aspect-ratio:4/3; background:#000; border-radius:10px; overflow:hidden; border:1px solid var(--border); }
+  .video-preview video { width:100%; height:100%; object-fit:cover; display:block; }
+  .capture-counter { position:absolute; top:10px; right:10px; background:rgba(0,0,0,.7); color:var(--accent); font-family:var(--mono); font-size:13px; padding:4px 10px; border-radius:6px; }
+  .progress-bar { height:4px; background:var(--border); border-radius:2px; overflow:hidden; }
+  .progress-fill { height:100%; background:var(--accent); border-radius:2px; transition:width .3s; width:0%; }
+  .btn-capture { width:100%; padding:13px; border-radius:8px; border:1px solid rgba(0,255,136,.4); background:transparent; color:var(--accent); font-family:var(--mono); font-size:12px; letter-spacing:1px; cursor:pointer; transition:all .2s; display:flex; align-items:center; justify-content:center; gap:8px; }
+  .btn-capture:hover { background:rgba(0,255,136,.08); }
+  .btn-capture:disabled { opacity:.4; cursor:not-allowed; }
+  .btn-train { width:100%; padding:13px; border-radius:8px; border:1px solid rgba(0,200,255,.4); background:transparent; color:#00c8ff; font-family:var(--mono); font-size:12px; letter-spacing:1px; cursor:pointer; transition:all .2s; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:8px; }
+  .btn-train:hover { background:rgba(0,200,255,.08); }
+  .btn-train:disabled { opacity:.4; cursor:not-allowed; }
+  .status-msg { font-family:var(--mono); font-size:11px; text-align:center; padding:6px; border-radius:6px; margin-top:4px; }
+  .status-msg.ok  { color:var(--accent); background:rgba(0,255,136,.08); border:1px solid rgba(0,255,136,.2); }
+  .status-msg.err { color:var(--danger); background:rgba(255,59,92,.08); border:1px solid rgba(255,59,92,.2); }
+  .status-msg.info { color:#00c8ff; background:rgba(0,200,255,.08); border:1px solid rgba(0,200,255,.2); }
   .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.9); z-index:100; align-items:center; justify-content:center; flex-direction:column; gap:16px; }
   .modal.open { display:flex; }
   .modal-img { max-width:92vw; max-height:82vh; border-radius:10px; border:1px solid var(--border); }
@@ -182,12 +219,24 @@
     </div>
   </header>
 
-  <!-- Top: Camera + Control -->
+  <!-- Nav -->
+  <nav class="nav">
+    <button class="nav-btn active" onclick="switchPage('dashboard')"><i class="fas fa-gauge-high"></i> Dashboard</button>
+    <button class="nav-btn" onclick="switchPage('users')"><i class="fas fa-users"></i> Manage Users</button>
+  </nav>
+
+  <!-- Page: Dashboard -->
+  <div class="page active" id="page-dashboard">
   <div class="top-grid">
     <div class="card video-card">
       <div class="video-header">
         <div class="label">// Camera Feed</div>
-        <div class="live-pill" id="live-pill"><div class="dot"></div><span id="live-text">STANDBY</span></div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="icon-btn" onclick="restartCamera()" title="Restart กล้อง">
+            <i class="fas fa-rotate-right"></i>
+          </button>
+          <div class="live-pill" id="live-pill"><div class="dot"></div><span id="live-text">STANDBY</span></div>
+        </div>
       </div>
       <div class="video-wrap">
         <img id="cam-feed" src="/api/stream" alt="Camera">
@@ -244,9 +293,47 @@
     </div>
 
   </div>
-</div>
+  </div><!-- /page-dashboard -->
 
-<!-- Modal -->
+  <!-- Page: Manage Users -->
+  <div class="page" id="page-users">
+    <div class="users-grid">
+
+      <!-- รายชื่อ users -->
+      <div class="card">
+        <div class="card-title">
+          // Users
+          <button class="icon-btn" onclick="loadUsers()"><i class="fas fa-rotate-right"></i></button>
+        </div>
+        <div class="user-list" id="user-list"><div class="empty-state">Loading...</div></div>
+      </div>
+
+      <!-- เพิ่ม user ใหม่ -->
+      <div class="card">
+        <div class="card-title">// เพิ่ม User ใหม่</div>
+        <div class="capture-area">
+          <input class="name-input" id="new-name" type="text" placeholder="ชื่อ เช่น Somchai" maxlength="30">
+          <div class="video-preview" id="video-preview">
+            <img id="capture-stream" src="" alt="camera" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:10px;">
+            <div class="capture-counter" id="capture-counter" style="display:none">0 / 30</div>
+            <button onclick="restartCamera()" title="Restart กล้อง"
+              style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:12px;">
+              <i class="fas fa-rotate-right"></i>
+            </button>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+          <button class="btn-capture" id="btn-start-capture" onclick="startCapture()">
+            <i class="fas fa-camera"></i> เปิดกล้องและถ่ายรูป
+          </button>
+          <button class="btn-train" id="btn-train" onclick="trainModel()" disabled>
+            <i class="fas fa-microchip"></i> Train Model
+          </button>
+          <div id="capture-status"></div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- /page-users -->
 <div class="modal" id="modal" onclick="closeModal()">
   <button class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button>
   <img class="modal-img" id="modal-img" src="" alt="suspect">
@@ -255,6 +342,201 @@
 <script>
 const API = '/api';
 let isProcessing = false;
+
+// ---- Camera Restart ----
+async function restartCamera() {
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+  // หยุด stream ทุกตัวก่อน
+  stopStream('cam-feed');
+  stopStream('capture-stream');
+  document.getElementById('live-pill').classList.remove('active');
+  document.getElementById('live-text').textContent = 'RESTARTING...';
+
+  try {
+    await fetch(`${API}/stream/restart`, { method: 'POST' });
+    // รอ picamera2 restart เสร็จ (~2.5 วิ)
+    setTimeout(() => {
+      // เปิด stream ใหม่ตามหน้าที่อยู่
+      const onDashboard = document.getElementById('page-dashboard').classList.contains('active');
+      if (onDashboard) startStream('cam-feed');
+      else             startStream('capture-stream');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-rotate-right"></i>';
+    }, 2500);
+  } catch(e) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-rotate-right"></i>';
+  }
+}
+
+// ---- Stream helpers ----
+function refreshStream(imgId) {
+  const img = document.getElementById(imgId);
+  if (!img) return;
+  img.src = `/api/stream?t=${Date.now()}`;
+}
+
+function stopStream(imgId) {
+  const img = document.getElementById(imgId);
+  if (!img) return;
+  img.src = '';  // หยุด stream ทันที
+}
+
+function startStream(imgId) {
+  const img = document.getElementById(imgId);
+  if (!img || img.src.includes('/api/stream')) return;
+  img.src = `/api/stream?t=${Date.now()}`;
+}
+
+// ---- Page Nav ----
+function switchPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`page-${page}`).classList.add('active');
+  document.querySelectorAll('.nav-btn')[page === 'dashboard' ? 0 : 1].classList.add('active');
+
+  if (page === 'dashboard') {
+    // เปิด stream หน้าหลัก ปิด stream capture
+    stopStream('capture-stream');
+    startStream('cam-feed');
+  } else {
+    // เปิด stream capture ปิด stream หน้าหลัก
+    stopStream('cam-feed');
+    document.getElementById('live-pill').classList.remove('active');
+    document.getElementById('live-text').textContent = 'STANDBY';
+    loadUsers();
+  }
+}
+
+// ---- Load Users ----
+async function loadUsers() {
+  const list = document.getElementById('user-list');
+  try {
+    const data  = await (await fetch(`${API}/users`)).json();
+    const users = data.users || [];
+    list.innerHTML = users.length ? users.map(u => `
+      <div class="user-item">
+        <div>
+          <div class="user-name">${u.name}</div>
+          <div class="user-count">${u.images} รูป</div>
+        </div>
+        <button class="user-del" onclick="deleteUser('${u.name}')">
+          <i class="fas fa-trash"></i> ลบ
+        </button>
+      </div>`).join('') : '<div class="empty-state">ยังไม่มี user</div>';
+  } catch { list.innerHTML = '<div class="empty-state">โหลดไม่ได้</div>'; }
+}
+
+async function deleteUser(name) {
+  if (!confirm(`ลบ ${name} ออกจากระบบ?\nรูปภาพทั้งหมดของ ${name} จะถูกลบด้วย`)) return;
+  try {
+    const r = await fetch(`${API}/users/${name}`, { method: 'DELETE' });
+    if (r.ok) { showStatus(`ลบ ${name} แล้ว`, 'ok'); loadUsers(); }
+    else showStatus('ลบไม่สำเร็จ', 'err');
+  } catch { showStatus('เกิดข้อผิดพลาด', 'err'); }
+}
+
+// ---- Capture ----
+let _captureCount  = 0;
+let _captureName   = '';
+let _captureActive = false;
+let _captureTimer  = null;
+const TOTAL_SHOTS  = 30;
+
+async function startCapture() {
+  const name = document.getElementById('new-name').value.trim();
+  if (!name) { showStatus('กรุณากรอกชื่อก่อน', 'err'); return; }
+
+  _captureName  = name;
+  _captureCount = 0;
+
+  // เริ่ม stream ถ้ายังไม่เริ่ม
+  startStream('capture-stream');
+
+  document.getElementById('progress-fill').style.width = '0%';
+  document.getElementById('capture-counter').style.display = 'block';
+  document.getElementById('capture-counter').textContent   = `0 / ${TOTAL_SHOTS}`;
+  document.getElementById('btn-start-capture').disabled    = true;
+  document.getElementById('btn-start-capture').innerHTML   = '<i class="fas fa-circle-dot" style="color:var(--danger)"></i> กำลังถ่าย...';
+
+  showStatus(`เตรียมพร้อม — จะถ่าย ${TOTAL_SHOTS} รูป กรุณาหันหน้าช้าๆ`, 'info');
+  setTimeout(() => { _captureActive = true; captureLoop(); }, 1500);
+}
+
+async function captureLoop() {
+  if (!_captureActive || _captureCount >= TOTAL_SHOTS) {
+    stopCapture();
+    return;
+  }
+  await captureFromStream();
+  _captureTimer = setTimeout(captureLoop, 400);
+}
+
+async function captureFromStream() {
+  // วาด frame จาก <img src="/api/stream"> ลง canvas แล้วส่ง server
+  const img    = document.getElementById('capture-stream');
+  const canvas = document.createElement('canvas');
+  canvas.width  = img.naturalWidth  || 640;
+  canvas.height = img.naturalHeight || 480;
+  canvas.getContext('2d').drawImage(img, 0, 0);
+  const base64 = canvas.toDataURL('image/jpeg', 0.85);
+
+  try {
+    const r = await fetch(`${API}/users/capture`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: _captureName, image: base64 })
+    });
+    if (r.ok) {
+      _captureCount++;
+      const pct = Math.round((_captureCount / TOTAL_SHOTS) * 100);
+      document.getElementById('progress-fill').style.width = pct + '%';
+      document.getElementById('capture-counter').textContent = `${_captureCount} / ${TOTAL_SHOTS}`;
+      showStatus(`ถ่ายรูป ${_captureCount}/${TOTAL_SHOTS}...`, 'info');
+    }
+  } catch(e) { console.error(e); }
+}
+
+function stopCapture() {
+  _captureActive = false;
+  if (_captureTimer) { clearTimeout(_captureTimer); _captureTimer = null; }
+  document.getElementById('btn-start-capture').innerHTML = '<i class="fas fa-camera"></i> เปิดกล้องและถ่ายรูป';
+  document.getElementById('btn-start-capture').disabled  = false;
+  document.getElementById('btn-train').disabled          = (_captureCount < TOTAL_SHOTS);
+  showStatus(`✅ ถ่ายครบ ${TOTAL_SHOTS} รูปแล้ว — กด Train Model ได้เลย`, 'ok');
+  loadUsers();
+}
+
+// ---- Train Model ----
+async function trainModel() {
+  const btn = document.getElementById('btn-train');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลัง Train...';
+  showStatus('กำลัง train model... รอสักครู่', 'info');
+  try {
+    const r    = await fetch(`${API}/users/train`, { method: 'POST' });
+    const data = await r.json();
+    if (r.ok) {
+      showStatus(`✅ Train เสร็จ! ${data.faces} faces | ${data.users} users — ระบบพร้อมใช้งานทันที`, 'ok');
+    } else {
+      showStatus(`❌ ${data.detail}`, 'err');
+    }
+  } catch { showStatus('❌ เกิดข้อผิดพลาด', 'err'); }
+  finally {
+    btn.innerHTML = '<i class="fas fa-microchip"></i> Train Model';
+    btn.disabled  = false;
+    loadUsers();
+  }
+}
+
+function showStatus(msg, type) {
+  const el = document.getElementById('capture-status');
+  el.className = `status-msg ${type}`;
+  el.textContent = msg;
+}
 
 // ---- Clock ----
 function updateClock() {

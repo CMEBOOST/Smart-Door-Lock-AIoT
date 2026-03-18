@@ -16,7 +16,7 @@ except ImportError:
     print("[PIR] ⚠️  ไม่พบ gpiozero — รันในโหมด simulation")
 
 PIR_PIN            = 17
-INACTIVITY_TIMEOUT = 10.0  # วินาที ไม่มีการเคลื่อนไหว → ปิดกล้อง
+INACTIVITY_TIMEOUT = 20.0  # วินาที ไม่มีการเคลื่อนไหว → ปิดกล้อง
 
 
 def _ts():

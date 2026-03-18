@@ -20,9 +20,8 @@ import RPi.GPIO as GPIO
 BUZZER_PIN        = 27
 NO_PERSON_TIMEOUT = 20
 BUZZER_DURATION   = 10
-BEEP_FREQ         = 1000
-BEEP_SPEED        = 0.3
-WELCOME_COOLDOWN  = 60     # วินาที — หลัง WELCOME ล่าสุด ถ้าครบแล้วมีคนเข้าใกล้ → Buzzer ทันที
+BEEP_FREQ         = 2500   # Hz — ความถี่เสียง (ปรับได้)
+BEEP_SPEED        = 0.3    # วินาที — ความเร็ว beep (ปรับได้)
 DB_PATH           = "database/smart_lock.db"
 # ============================================================
 
@@ -35,13 +34,12 @@ camera_active = threading.Event()
 
 class SystemState:
     def __init__(self):
-        self.lock              = threading.Lock()
-        self.person_near       = False
-        self.near_since        = None
-        self.last_person_time  = None
-        self.buzzer_active     = False
-        self.face_recognized   = False
-        self.last_welcome_time = None  # เวลา WELCOME ล่าสุด
+        self.lock             = threading.Lock()
+        self.person_near      = False
+        self.near_since       = None
+        self.last_person_time = None
+        self.buzzer_active    = False
+        self.face_recognized  = False
 
 state = SystemState()
 
@@ -136,31 +134,15 @@ def _on_pir_inactive():
 # ----------------------------------------------------------------
 def _on_person_near(distance: float):
     with state.lock:
-        now = time.time()
+        if not state.person_near:
+            state.person_near = True
+            state.near_since  = time.time()
+            print(f"[{_ts()}] 📏 คนอยู่ใกล้ {distance}cm — เริ่มจับเวลา")
+        state.last_person_time = time.time()
 
-        # เช็คว่าผ่าน WELCOME_COOLDOWN แล้วหรือยัง
-        cooldown_passed = (
-            state.last_welcome_time is None or
-            (now - state.last_welcome_time) >= WELCOME_COOLDOWN
-        )
-
-        if cooldown_passed and not state.buzzer_active:
-            # ครบ cooldown แล้วมีคนเข้าใกล้ → Buzzer ทันที
-            elapsed_since = round(now - state.last_welcome_time) if state.last_welcome_time else "-"
-            print(f"[{_ts()}] ⚠️  คนเข้าใกล้ {distance}cm หลัง WELCOME {elapsed_since}s → Buzzer!")
-            threading.Thread(target=_beep_suspect, daemon=True).start()
-            db.log_suspect(
-                trigger_type="ULTRASONIC_LOITER",
-                duration_sec=0,
-                distance_cm=distance,
-                buzzer_fired=True
-            )
-        else:
-            if not state.person_near:
-                remaining = max(0, WELCOME_COOLDOWN - (now - state.last_welcome_time)) if state.last_welcome_time else 0
-                print(f"[{_ts()}] 📏 คนอยู่ใกล้ {distance}cm — ยังอยู่ใน cooldown ({remaining:.0f}s)")
-            state.person_near      = True
-            state.last_person_time = now
+        elapsed = time.time() - state.near_since
+        if elapsed >= NO_PERSON_TIMEOUT and not state.face_recognized:
+            _trigger_suspect(distance=distance, duration=elapsed)
 
 
 def _on_person_gone():
@@ -202,8 +184,7 @@ def manual_buzz(duration: float = BUZZER_DURATION):
 
 def notify_welcome(name: str):
     with state.lock:
-        state.face_recognized   = True
-        state.last_welcome_time = time.time()  # บันทึกเวลา WELCOME ล่าสุด
+        state.face_recognized = True
     print(f"[{_ts()}] 👤 WELCOME: {name}")
     # ไม่มีเสียงตอนเปิดประตู
 

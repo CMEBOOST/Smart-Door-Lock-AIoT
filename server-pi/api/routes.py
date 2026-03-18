@@ -172,6 +172,17 @@ async def delete_suspect_image(filename: str):
     return {"status": "deleted", "filename": filename}
 
 
+@router.post("/stream/restart")
+async def stream_restart():
+    """Restart กล้องใหม่ทั้งหมด"""
+    try:
+        from core.face_processor import restart_camera
+        restart_camera()
+        return {"status": "restarting"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ----------------------------------------------------------------
 #  MJPEG Stream
 # ----------------------------------------------------------------
@@ -197,3 +208,109 @@ async def video_stream():
         _mjpeg_generator(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+
+# ----------------------------------------------------------------
+#  User Management
+# ----------------------------------------------------------------
+import base64
+import shutil
+from fastapi import Body
+
+DATASET_DIR = os.path.join(BASE_DIR, "dataset")
+
+
+@router.get("/users")
+async def get_users():
+    """ดึงรายชื่อ users ทั้งหมด + จำนวนรูป"""
+    if not os.path.exists(DATASET_DIR):
+        return {"users": []}
+    users = []
+    for name in sorted(os.listdir(DATASET_DIR)):
+        folder = os.path.join(DATASET_DIR, name)
+        if not os.path.isdir(folder):
+            continue
+        count = len([f for f in os.listdir(folder) if f.lower().endswith((".jpg",".jpeg",".png"))])
+        users.append({"name": name, "images": count})
+    return {"users": users}
+
+
+@router.post("/users/capture")
+async def capture_face(payload: dict = Body(...)):
+    """
+    รับรูปจาก browser (base64) บันทึกลง dataset/{name}/
+    payload: { "name": "Somchai", "image": "data:image/jpeg;base64,..." }
+    """
+    name  = payload.get("name", "").strip()
+    image = payload.get("image", "")
+
+    if not name:
+        raise HTTPException(status_code=400, detail="กรุณาระบุชื่อ")
+    if not image:
+        raise HTTPException(status_code=400, detail="ไม่มีรูปภาพ")
+
+    # ตรวจ path traversal
+    if ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="ชื่อไม่ถูกต้อง")
+
+    folder = os.path.join(DATASET_DIR, name)
+    os.makedirs(folder, exist_ok=True)
+
+    # แปลง base64 → jpg
+    if "," in image:
+        image = image.split(",")[1]
+    img_bytes = base64.b64decode(image)
+
+    # นับไฟล์ที่มีอยู่แล้ว
+    existing = len([f for f in os.listdir(folder) if f.endswith(".jpg")])
+    filename = os.path.join(folder, f"img_{existing+1:04d}.jpg")
+
+    with open(filename, "wb") as f:
+        f.write(img_bytes)
+
+    return {"status": "saved", "name": name, "count": existing + 1, "path": filename}
+
+
+@router.post("/users/train")
+async def train_model():
+    """Train model ใหม่และ reload โดยไม่ restart"""
+    import asyncio
+    try:
+        # รัน train ใน thread แยก (ไม่ block event loop)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _do_train)
+        return {"status": "success", **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _do_train():
+    from core.train import train
+    from core.face_processor import reload_model
+    result = train()
+    reload_model()
+    return result
+
+
+@router.delete("/users/{name}")
+async def delete_user(name: str):
+    """ลบ user + dataset folder"""
+    if ".." in name or "/" in name:
+        raise HTTPException(status_code=400, detail="ชื่อไม่ถูกต้อง")
+
+    folder = os.path.join(DATASET_DIR, name)
+    if not os.path.exists(folder):
+        raise HTTPException(status_code=404, detail=f"ไม่พบ user: {name}")
+
+    shutil.rmtree(folder)
+
+    # ลบออกจาก DB ด้วย
+    try:
+        conn = __import__('sqlite3').connect(os.path.join(BASE_DIR, "database", "smart_lock.db"))
+        conn.execute("DELETE FROM users WHERE name = ?", (name,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+    return {"status": "deleted", "name": name}

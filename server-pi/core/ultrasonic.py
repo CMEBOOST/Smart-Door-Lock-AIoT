@@ -10,7 +10,7 @@ from datetime import datetime
 
 TRIG_PIN         = 23
 ECHO_PIN         = 24
-NEAR_DISTANCE    = 150    # cm — ถือว่าคนอยู่หน้าประตู
+NEAR_DISTANCE    = 50    # cm — ถือว่าคนอยู่หน้าประตู
 MEASURE_INTERVAL = 0.3    # วินาที
 
 

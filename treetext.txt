@@ -1,0 +1,54 @@
+ server-pi
+ ┣ __pycache__
+ ┃ ┗ main.cpython-313.pyc
+ ┣ api
+ ┃ ┣ __pycache__
+ ┃ ┃ ┣ __init__.cpython-313.pyc
+ ┃ ┃ ┗ routes.cpython-313.pyc
+ ┃ ┣ __init__.py
+ ┃ ┗ routes.py
+ ┣ core
+ ┃ ┣ __pycache__
+ ┃ ┃ ┣ __init__.cpython-313.pyc
+ ┃ ┃ ┣ face_processor.cpython-313.pyc
+ ┃ ┃ ┣ lcd.cpython-313.pyc
+ ┃ ┃ ┣ pir.cpython-313.pyc
+ ┃ ┃ ┣ sensor_manager.cpython-313.pyc
+ ┃ ┃ ┣ train.cpython-313.pyc
+ ┃ ┃ ┗ ultrasonic.cpython-313.pyc
+ ┃ ┣ test
+ ┃ ┃ ┣ face_processor_test.py
+ ┃ ┃ ┣ lcd.py
+ ┃ ┃ ┗ pirtest.py
+ ┃ ┣ __init__.py
+ ┃ ┣ face_processor.py
+ ┃ ┣ pir.py
+ ┃ ┣ sensor_manager.py
+ ┃ ┣ train.py
+ ┃ ┗ ultrasonic.py
+ ┣ database
+ ┃ ┣ __pycache__
+ ┃ ┃ ┗ db_manager.cpython-313.pyc
+ ┃ ┣ files (1)
+ ┃ ┃ ┣ db_manager.py
+ ┃ ┃ ┗ schema.sql
+ ┃ ┣ db_manager.py
+ ┃ ┣ schema.sql
+ ┃ ┗ smart_lock.db
+ ┣ dataset
+ ┣ dlib
+ ┣ public
+ ┃ ┗ index.html
+ ┣ storage
+ ┃ ┣ log_captures
+ ┃ ┣ names.json
+ ┃ ┗ trainer.yml
+ ┣ utils
+ ┃ ┣ __init__.py
+ ┃ ┣ image_helper.py
+ ┃ ┗ logger.py
+ ┣ .lgd-nfy0
+ ┣ buzzer.py
+ ┣ config.json
+ ┣ main.py
+ ┗ requirements.txt
